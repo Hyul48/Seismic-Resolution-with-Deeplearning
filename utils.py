@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 from datetime import datetime
 import logging
+from prettytable import PrettyTable
 
 def _downscale(images, K):
     """Differentiable image downscaling by a factor of K for 1-channel images"""
@@ -53,8 +54,11 @@ def setup_logging(log_dir = './'):
 
 # 하이퍼파라미터 로깅 함수
 def log_hyperparameters(params):
-    logging.info("Hyperparameters:")
+    table = PrettyTable()
+    table.field_names = ["Hyperparameter", "Value"]
+    
     for key, value in params.items():
-        logging.info(f"{key}: {value}")
-
-
+        table.add_row([key, value])
+    
+    logging.info("Hyperparameters:\n" + str(table))
+    print("Hyperparameters:\n" + str(table))

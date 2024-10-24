@@ -13,7 +13,7 @@ import tqdm
 from utils import *
 from utils import _downscale
 
-###################################################로깅 세팅#################################################################
+#########################################################로깅 세팅###########################################################
 setup_logging()
 ###################################################하이퍼파라미터 세팅 & 기록 ################################################
 hyperparameters = {
@@ -29,7 +29,7 @@ log_hyperparameters(hyperparameters)
 ###########################################################################################################################
 
 #####################################################데이터셋 정의##########################################################
-class FaultsDataset(Dataset):
+class SeismicDataset(Dataset):
     def __init__(self, imgs_dir, downscale_factor=4):
         self.images_dir = imgs_dir
         self.ids = [splitext(file)[0] for file in listdir(imgs_dir) if not file.startswith('.')]
@@ -77,7 +77,7 @@ class FaultsDataset(Dataset):
 
 ##################################################### DataLoader 사용 #############################################################
 def create_data_loader(imgs_dir, batch_size=32, shuffle=True, subset_size=None):
-    dataset = FaultsDataset(imgs_dir)
+    dataset = SeismicDataset(imgs_dir)
 
     # 서브셋 크기를 지정한 경우
     if subset_size is not None:
@@ -104,6 +104,7 @@ discriminator = DiscriminatorModel(input_channels=1).to(device)
 ######################################################## 옵티마이저 선정###########################################################
 optimizer_G = optim.Adam(generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
 optimizer_D = optim.Adam(discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999))
+##################################################################################################################################
 
 ############################################### 저해상도 이미지에 약간의 노이즈 추가################################################
 def add_noise_to_features(train_features, noise_level):
@@ -115,16 +116,18 @@ def add_noise_to_features(train_features, noise_level):
     noise = torch.randn_like(train_features) * noise_level
     noisy_train_features = train_features + noise
     return noisy_train_features
+####################################################################################################################################
+
 
 ##################################################### 모델 저장 함수 #################################################################
 def save_model(model, path):
     torch.save(model.state_dict(), path)
     print(f'Model saved to {path}')
-##################################################################################################################################
+####################################################################################################################################
 
 
 
-########################################################훈련 시작!###############################################################
+########################################################훈련 시작!###################################################################
 num_epochs = 10 
 for epoch in range(num_epochs):
     for i, (low_res_image, real_images) in enumerate(tqdm.tqdm(data_loader, desc=f"Epoch {epoch+1}/{num_epochs}")):
