@@ -11,7 +11,24 @@ from os.path import splitext
 import numpy as np
 import tqdm
 from utils import *
+from utils import _downscale
 
+###################################################로깅 세팅#################################################################
+setup_logging()
+###################################################하이퍼파라미터 세팅 & 기록 ################################################
+hyperparameters = {
+        "learning_rate_g": 0.001,
+        "learning_rate_d": 0.001,
+        "batch_size": 64,
+        "num_epochs": 10,
+        "optimizer_g": "Adam",
+        "optimizer_d": "Adam",
+        "loss_function": "BCEWithLogitsLoss"
+    }
+log_hyperparameters(hyperparameters)
+###########################################################################################################################
+
+#####################################################데이터셋 정의##########################################################
 class FaultsDataset(Dataset):
     def __init__(self, imgs_dir, downscale_factor=4):
         self.images_dir = imgs_dir
@@ -44,16 +61,21 @@ class FaultsDataset(Dataset):
         # 입력 이미지로 사용할 저해상도 이미지 생성
         low_res_img = F.interpolate(img.unsqueeze(0), scale_factor=1/self.downscale_factor, mode='bilinear', align_corners=False)
         low_res_img = low_res_img.squeeze(0)
+
         # print(low_res_img.shape)
-        # print(label.shape)
+        # print(label.shape) # 위의 저해상도 필터가 정상적으로 작동했다면 label의 크기가 low_res_img의 4배의 크기를 가지고 있을 것
+        
         # 저해상도 이미지를 원본 크기로 복원
-        low_res_img_restored = F.interpolate(low_res_img.unsqueeze(0), scale_factor=self.downscale_factor, mode='bilinear', align_corners=False)
+        low_res_img_restored = F.interpolate(low_res_img.unsqueeze(0), scale_factor=self.downscale_factor, mode='bilinear', \
+                                             align_corners=False)
         low_res_img_restored = low_res_img_restored.squeeze(0)
 
         return low_res_img_restored, label  # 복원된 저해상도 이미지와 원본 이미지(레이블) 반환
+##################################################################################################################################
 
 
-# DataLoader 사용 예시
+
+##################################################### DataLoader 사용 #############################################################
 def create_data_loader(imgs_dir, batch_size=32, shuffle=True, subset_size=None):
     dataset = FaultsDataset(imgs_dir)
 
@@ -64,42 +86,46 @@ def create_data_loader(imgs_dir, batch_size=32, shuffle=True, subset_size=None):
 
     data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
     return data_loader
+#################################################################################################################################
 
-# GPU 확인 및 모델 초기화
+############################################## GPU 확인 및 모델 초기화 ###########################################################
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-# 사용 예시
+##################################################### 경로 설정 #################################################################
 imgs_dir = '/data2/seismic_HYUL/dataset/thebe_processed_128_64/train/seismic'  # 이미지 경로를 설정
 data_loader = create_data_loader(imgs_dir, batch_size=8, subset_size = 10000)
+save_dir = "/data2/High_resolution/Result"
 
-# 모델 초기화
+######################## 모델 초기화(input channel과 output channel은 흑백이면 1-channel 컬러면 3-channel)##########################
 generator = GeneratorModel(input_channels=1, output_channels=1).to(device)
 discriminator = DiscriminatorModel(input_channels=1).to(device)
 
-# 손실 함수와 최적화 기법 설정
+######################################################## 옵티마이저 선정###########################################################
 optimizer_G = optim.Adam(generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
 optimizer_D = optim.Adam(discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999))
 
+############################################### 저해상도 이미지에 약간의 노이즈 추가################################################
 def add_noise_to_features(train_features, noise_level):
+    """
+    train_features : noise를 추가할 이미지
+    noise_level : noise 추가 비율
+    """
     # 주어진 train_features에 노이즈 추가
     noise = torch.randn_like(train_features) * noise_level
     noisy_train_features = train_features + noise
     return noisy_train_features
 
-# 모델 저장 함수
+##################################################### 모델 저장 함수 #################################################################
 def save_model(model, path):
     torch.save(model.state_dict(), path)
     print(f'Model saved to {path}')
-
-# 모델 불러오기 함수
-def load_model(model, path):
-    model.load_state_dict(torch.load(path))
-    model.eval()  # 평가 모드로 전환
-    print(f'Model loaded from {path}')
+##################################################################################################################################
 
 
-num_epochs = 100
+
+########################################################훈련 시작!###############################################################
+num_epochs = 10 
 for epoch in range(num_epochs):
     for i, (low_res_image, real_images) in enumerate(tqdm.tqdm(data_loader, desc=f"Epoch {epoch+1}/{num_epochs}")):
         real_images = real_images.to(device)  # 레이블(원본 이미지)을 GPU로 이동
@@ -118,7 +144,8 @@ for epoch in range(num_epochs):
 
         # 가짜 이미지 생성 (Generator가 생성)
         fake_images = generator(low_res_image)
-        outputs_fake = discriminator(fake_images.detach())  # detach()로 기울기 계산 방지
+        fake_images_down_scale = _downscale(fake_images, 4)
+        outputs_fake = discriminator(fake_images_down_scale.detach())  # detach()로 기울기 계산 방지
         d_loss_fake = F.binary_cross_entropy_with_logits(outputs_fake, fake_labels)
 
         # 총 Discriminator 손실 및 가중치 업데이트
@@ -136,8 +163,10 @@ for epoch in range(num_epochs):
         g_loss.backward()
         optimizer_G.step()
 
-    print(f'Epoch [{epoch+1}/{num_epochs}], d_loss: {d_loss.item()}, g_loss: {g_loss.item()}')
+    logging.info(f"Epoch [{epoch+1}/{num_epochs}], d_loss: {d_loss.item():.4f}, g_loss: {g_loss.item():.4f}")
+    print(f"Epoch [{epoch+1}/{num_epochs}], d_loss: {d_loss.item():.4f}, g_loss: {g_loss.item():.4f}")
 
     # 모델 저장
-    model_save_path = f"generator_epoch_{epoch+1}.pth"
+    model_save_path = f"{save_dir}/generator_epoch_{epoch+1}.pth"
     save_model(generator, model_save_path)
+#####################################################################################################################################

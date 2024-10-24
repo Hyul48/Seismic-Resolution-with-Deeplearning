@@ -1,5 +1,7 @@
 import torch
 import torch.nn.functional as F
+from datetime import datetime
+import logging
 
 def _downscale(images, K):
     """Differentiable image downscaling by a factor of K for 1-channel images"""
@@ -39,5 +41,20 @@ def create_discriminator_loss(disc_real_output, disc_fake_output):
 
     return disc_real_loss, disc_fake_loss
 
+import os
+
+def setup_logging(log_dir = './'):
+    log_dir = "./logs"  # 로그를 저장할 폴더 경로
+    os.makedirs(log_dir, exist_ok=True)  # logs 폴더가 없으면 생성
+    log_filename = os.path.join(log_dir, f"training_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+    logging.basicConfig(filename=log_filename, level=logging.INFO,
+                        format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.info('Log setup complete.')
+
+# 하이퍼파라미터 로깅 함수
+def log_hyperparameters(params):
+    logging.info("Hyperparameters:")
+    for key, value in params.items():
+        logging.info(f"{key}: {value}")
 
 
