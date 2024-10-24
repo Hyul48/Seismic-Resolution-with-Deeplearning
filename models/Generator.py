@@ -37,7 +37,7 @@ class GeneratorModel(nn.Module):
         in_channels = input_channels
         for i, nunits in enumerate(res_units[:-1]):
             
-            if i > 0:  # 첫 번째 unit이 아닐 때
+            if i > 0:  # 첫 번째 unit이 아닐 때 이전 레이어의 채널 수를 nunits와 맞춰주는 Conv 레이어 추가
                 self.layers.append(nn.Conv2d(previous_nunits, nunits, kernel_size=1))  # 1x1 Conv 추가
                 # previous_nunits를 nunits로 업데이트
             previous_nunits = nunits  # 현재 nunits를 previous_nunits로 업데이트
@@ -45,7 +45,7 @@ class GeneratorModel(nn.Module):
             for _ in range(2):
                 self.layers.append(ResidualBlock(nunits, kernel_size=mapsize))
             
-            # 이전 레이어의 채널 수를 nunits와 맞춰주는 Conv 레이어 추가
+            """난 별로 이렇게 구현하는 걸 좋아하지 않는데 자연스럽게 channel 갯수를 맞출수 있는 방법을 연구할 필요가 있을 것 같다."""
             
             
             # Upscaling using transposed convolution
@@ -79,12 +79,12 @@ class GeneratorModel(nn.Module):
         x = self.sigmoid(x)  # Sigmoid activation for final output
         return x
 
-""# Example usage
+"""# Example usage
 features = torch.randn(1, 1, 32, 32)  # Input features (batch_size, channels, height, width)
 channels = 3  # Number of output channels
 
 generator = GeneratorModel(input_channels=features.size(1), output_channels=channels)
 output = generator(features)
-print(output.shape)
-""
+print(output.shape)"""
+
 

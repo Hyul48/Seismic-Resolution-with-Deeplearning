@@ -14,7 +14,7 @@ from utils import *
 from utils import _downscale
 
 #########################################################로깅 세팅###########################################################
-setup_logging()
+setup_logging(log_dir = '/data2/High_resolution/log')
 ###################################################하이퍼파라미터 세팅 & 기록 ################################################
 hyperparameters = {
         "learning_rate_g": 0.001,
@@ -70,7 +70,8 @@ class SeismicDataset(Dataset):
                                              align_corners=False)
         low_res_img_restored = low_res_img_restored.squeeze(0)
 
-        return low_res_img_restored, label  # 복원된 저해상도 이미지와 원본 이미지(레이블) 반환
+        # 복원된 저해상도 이미지와 원본 이미지(레이블) 반환
+        return low_res_img_restored, label  
 ##################################################################################################################################
 
 

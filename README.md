@@ -1,10 +1,26 @@
-## 공사중 
+# GAN을 활용한 고해상도 탄성파 이미지 생성
 
-### 공사 해야할 것 들
+## Exmouth 고원 탄성파 이미지 고해상도 복원 작업(흑백)
 
-1. 입력 이미지에 대한 처리
-  입력 이미지를 저해상도로 바꾼후 원본 크기로 복원해야 하는가? 아니면 복원하지 말아야 하는가? 
-  현재 복원으로 진행하고 있지만, 미복원으로 진행시 코드상에 해결 가능한 문제가 발생중
-2. 아직 겨우 train만 동작하게끔 작성해 놓은 상태
-   path 설정이나, 하이퍼 파라미터 등의 가독성을 높일 필요가 있다.
-3. Early stop이나 조기종료, lr 스케쥴에 대해서 고민할 필요도 있음
+![My Image](images/gray_scale.png)
+
+## Exmouth 고원 탄성파 이미지 고해상도 복원 작업(컬러)
+
+![My Image](images/seismic_scale.png)
+
+개선된 Reflecotr(반사면)을 확인할 수 있음.
+
+### MODEL
+
+1. Generator
+   고해상도 이미지를 만드는 모델
+2. Discriminator
+   해당 모델이 고해상도로 복원된 이미지인지 원본이미지인지 판단하는 작업을 진행함.
+
+### TO DO LIST
+
+* [ ] organize the `train.py` code
+* [ ] Make and use hyperparameter config.
+* [ ] Considering how to handle the checkerboard pattern.
+* [ ] Create inference code at the directory level.
+* [ ] Compare Fault Detection Score between original seismic vs high-resolution seismic

@@ -3,6 +3,11 @@ import torch.nn.functional as F
 from datetime import datetime
 import logging
 from prettytable import PrettyTable
+import numpy as np
+from skimage.util.shape import view_as_windows
+import scipy.io as sio
+import scipy.signal as signal
+from itertools import product
 
 def _downscale(images, K):
     """Differentiable image downscaling by a factor of K for 1-channel images"""
@@ -45,7 +50,7 @@ def create_discriminator_loss(disc_real_output, disc_fake_output):
 import os
 
 def setup_logging(log_dir = './'):
-    log_dir = "./logs"  # 로그를 저장할 폴더 경로
+    log_dir = log_dir  # 로그를 저장할 폴더 경로
     os.makedirs(log_dir, exist_ok=True)  # logs 폴더가 없으면 생성
     log_filename = os.path.join(log_dir, f"training_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
     logging.basicConfig(filename=log_filename, level=logging.INFO,
@@ -62,3 +67,101 @@ def log_hyperparameters(params):
     
     logging.info("Hyperparameters:\n" + str(table))
     print("Hyperparameters:\n" + str(table))
+
+def normalize_seis(seismic):
+    min = seismic.min()
+    max = seismic.max()
+    return (seismic - min) / (max - min)
+
+
+def get_sliding_wnd_params(img_sz, patch_sz, step):
+    # For example, if patch_sz = 257, step = 128 ...
+    # and img_sz = (3174, 1537) ...
+    # (Image size is .T of ndarray shape because x and y are col, row each)
+    overlap_sz = patch_sz - step # overlap_sz = 129
+    img_width, img_height = img_sz # img_width = 3174, img_height = 1537
+
+    horizontal_cnt = int(np.ceil((img_width - overlap_sz) / step)) # No. of horizontal step to cover whole image
+    new_img_width = step * horizontal_cnt + overlap_sz # New width w/ padding
+    pad_l = int((new_img_width - img_width) / 2) # left padding
+    pad_r = new_img_width - img_width - pad_l # right padding
+
+    vertical_cnt = int(np.ceil((img_height - overlap_sz) / step)) 
+    new_img_height = step * vertical_cnt + overlap_sz
+    pad_t = int((new_img_height - img_height) / 2) # top padding
+    pad_b = new_img_height - img_height - pad_t # bottom padding
+
+    return ((pad_t, pad_b), (pad_l, pad_r)), (horizontal_cnt, vertical_cnt)
+
+
+def get_sliding_wnd_patches(img, padding, patch_sz, step):
+    padded = np.pad(img, padding, 'reflect')
+    patches = view_as_windows(padded, (patch_sz, patch_sz), step=step)
+    patches = patches.reshape((-1, patch_sz, patch_sz))
+    return patches
+
+def spline_window(wnd_sz, power=2):
+    '''
+    Squared spline (power=2) window function:
+    https://www.wolframalpha.com/input/?i=y%3Dx**2,+y%3D-(x-2)**2+%2B2,+y%3D(x-4)**2,+from+y+%3D+0+to+2
+    '''
+    intersection = int(wnd_sz/4)
+    wnd_outer = (abs(2*(signal.triang(wnd_sz))) ** power)/2
+    wnd_outer[intersection:-intersection] = 0
+
+    wnd_inner = 1 - (abs(2*(signal.triang(wnd_sz) - 1)) ** power)/2
+    wnd_inner[:intersection] = 0
+    wnd_inner[-intersection:] = 0
+
+    wnd = wnd_inner + wnd_outer
+    wnd = wnd / np.average(wnd)
+    return wnd
+
+cached_2d_windows = dict()
+
+def window_2d(wnd_sz, power=2):
+    '''
+    Make a 1D window function, then infer and return a 2D window function.
+    Done with an augmentation, and self multiplication with its transpose.
+    Could be generalized to more dimensions.
+    '''
+    # Memoization
+    global cached_2d_windows
+    key = "{}_{}".format(wnd_sz, power)
+    if key in cached_2d_windows:
+        wnd = cached_2d_windows[key]
+    else:
+        wnd = spline_window(wnd_sz, power)
+        wnd = np.expand_dims(np.expand_dims(wnd, -1), -1)
+        wnd = wnd * wnd.transpose(1, 0, 2)
+        cached_2d_windows[key] = wnd
+    return wnd
+    
+def recover_img_from_patches(patches, img_sz, padding, overlap_sz):
+    assert len(patches.shape) == 4
+    # patches : vert. cnt, hor. cnt, patch_sz, patch_sz
+    weights_each = window_2d(wnd_sz=patches.shape[3], power=2).squeeze()
+    img_height, img_width = img_sz
+    img = np.zeros(img_sz, dtype=patches.dtype)
+    divisor = np.zeros(img_sz, dtype=patches.dtype)
+
+    img = np.pad(img, padding, 'reflect')
+    divisor = np.pad(divisor, padding, 'reflect')
+
+    num_height, num_width, patch_height, patch_width = patches.shape
+
+    step_width = patch_width - overlap_sz
+    step_height = patch_height - overlap_sz
+
+    for n_y, n_x in product(range(num_height), range(num_width)):
+        patch = patches[n_y, n_x]
+        x_i, y_i = n_x * step_width, n_y * step_height
+        x_f, y_f = n_x * step_width + patch_width, n_y * step_height + patch_height
+        img[y_i:y_f, x_i:x_f] += patch
+        divisor[y_i:y_f, x_i:x_f] += weights_each
+        # divisor[y_i:y_f, x_i:x_f] += 1 -- old code
+
+    recovered = img / divisor
+    pad_t = padding[0][0]
+    pad_l = padding[1][0]
+    return recovered[pad_t:pad_t + img_height, pad_l:pad_l + img_width]
