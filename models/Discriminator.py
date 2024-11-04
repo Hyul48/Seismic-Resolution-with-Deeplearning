@@ -50,8 +50,8 @@ class DiscriminatorModel(nn.Module):
     
 
 
-"""# Example usage
+# Example usage
 disc_input = torch.randn(64, 3, 64, 64)  # Example input tensor (batch_size, channels, height, width)
 discriminator = DiscriminatorModel(input_channels=3)
 output = discriminator(disc_input)
-print(output)"""
+print(output)

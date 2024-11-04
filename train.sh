@@ -1,0 +1,1 @@
+python /data2/High_resolution/train.py

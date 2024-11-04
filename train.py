@@ -13,22 +13,21 @@ import tqdm
 from utils import *
 from utils import _downscale
 
-#########################################################로깅 세팅###########################################################
+#==================================================로깅 세팅=================================================================
 setup_logging(log_dir = '/data2/High_resolution/log')
-###################################################하이퍼파라미터 세팅 & 기록 ################################################
+#=============================================하이퍼파라미터 세팅 & 기록 =====================================================
 hyperparameters = {
-        "learning_rate_g": 0.001,
-        "learning_rate_d": 0.001,
-        "batch_size": 64,
+        "learning_rate_g": 0.002,
+        "learning_rate_d": 0.002,
+        "batch_size": 8,
         "num_epochs": 10,
         "optimizer_g": "Adam",
         "optimizer_d": "Adam",
-        "loss_function": "BCEWithLogitsLoss"
+        "gene_l1_facotr": 0.9
     }
 log_hyperparameters(hyperparameters)
-###########################################################################################################################
 
-#####################################################데이터셋 정의##########################################################
+#================================================데이터셋 정의==============================================================
 class SeismicDataset(Dataset):
     def __init__(self, imgs_dir, downscale_factor=4):
         self.images_dir = imgs_dir
@@ -59,7 +58,8 @@ class SeismicDataset(Dataset):
         label = img.clone()
 
         # 입력 이미지로 사용할 저해상도 이미지 생성
-        low_res_img = F.interpolate(img.unsqueeze(0), scale_factor=1/self.downscale_factor, mode='bilinear', align_corners=False)
+        low_res_img = F.interpolate(img.unsqueeze(0), scale_factor=1/self.downscale_factor,\
+                                     mode='bilinear', align_corners=False)
         low_res_img = low_res_img.squeeze(0)
 
         # print(low_res_img.shape)
@@ -72,12 +72,12 @@ class SeismicDataset(Dataset):
 
         # 복원된 저해상도 이미지와 원본 이미지(레이블) 반환
         return low_res_img_restored, label  
-##################################################################################################################################
 
 
 
-##################################################### DataLoader 사용 #############################################################
-def create_data_loader(imgs_dir, batch_size=32, shuffle=True, subset_size=None):
+
+#============================================= DataLoader 및 Subset ======================================================
+def create_data_loader(imgs_dir, batch_size= 8 , shuffle=True, subset_size=None):
     dataset = SeismicDataset(imgs_dir)
 
     # 서브셋 크기를 지정한 경우
@@ -87,27 +87,26 @@ def create_data_loader(imgs_dir, batch_size=32, shuffle=True, subset_size=None):
 
     data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
     return data_loader
-#################################################################################################################################
 
-############################################## GPU 확인 및 모델 초기화 ###########################################################
+#============================================== GPU 확인 및 모델 초기화 ====================================================
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-##################################################### 경로 설정 #################################################################
+#=================================================== 경로 설정 =============================================================
 imgs_dir = '/data2/seismic_HYUL/dataset/thebe_processed_128_64/train/seismic'  # 이미지 경로를 설정
-data_loader = create_data_loader(imgs_dir, batch_size=8, subset_size = 10000)
+data_loader = create_data_loader(imgs_dir, batch_size=hyperparameters['batch_size'], subset_size = 100000)
 save_dir = "/data2/High_resolution/Result"
 
-######################## 모델 초기화(input channel과 output channel은 흑백이면 1-channel 컬러면 3-channel)##########################
+#================= 모델 초기화(input channel과 output channel은 흑백이면 1-channel 컬러면 3-channel)==========================
 generator = GeneratorModel(input_channels=1, output_channels=1).to(device)
 discriminator = DiscriminatorModel(input_channels=1).to(device)
 
-######################################################## 옵티마이저 선정###########################################################
-optimizer_G = optim.Adam(generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
-optimizer_D = optim.Adam(discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999))
-##################################################################################################################################
+#============================================== 옵티마이저 선정 =============================================================
+optimizer_G = optim.Adam(generator.parameters(), lr=hyperparameters['learning_rate_g'], betas=(0.5, 0.999))
+optimizer_D = optim.Adam(discriminator.parameters(), lr=hyperparameters['learning_rate_d'], betas=(0.5, 0.999))
 
-############################################### 저해상도 이미지에 약간의 노이즈 추가################################################
+
+#==================================== 저해상도 이미지에 약간의 노이즈 추가 ====================================================
 def add_noise_to_features(train_features, noise_level):
     """
     train_features : noise를 추가할 이미지
@@ -117,19 +116,16 @@ def add_noise_to_features(train_features, noise_level):
     noise = torch.randn_like(train_features) * noise_level
     noisy_train_features = train_features + noise
     return noisy_train_features
-####################################################################################################################################
 
 
-##################################################### 모델 저장 함수 #################################################################
+
+#==================================================== 모델 저장 함수 =======================================================
 def save_model(model, path):
     torch.save(model.state_dict(), path)
     print(f'Model saved to {path}')
-####################################################################################################################################
 
-
-
-########################################################훈련 시작!###################################################################
-num_epochs = 10 
+#======================================================= 훈련 시작 ========================================================
+num_epochs = hyperparameters['num_epochs']
 for epoch in range(num_epochs):
     for i, (low_res_image, real_images) in enumerate(tqdm.tqdm(data_loader, desc=f"Epoch {epoch+1}/{num_epochs}")):
         real_images = real_images.to(device)  # 레이블(원본 이미지)을 GPU로 이동
@@ -162,7 +158,9 @@ for epoch in range(num_epochs):
 
         # 가짜 이미지에 대해 Discriminator의 출력값 사용 (기울기 계산 필요)
         outputs_fake_for_G = discriminator(fake_images)
-        g_loss = create_generator_loss(outputs_fake_for_G, fake_images, real_images, gene_l1_factor=0.9)  # Generator 손실 계산
+        # Generator 손실 계산
+        g_loss = create_generator_loss(outputs_fake_for_G, fake_images, real_images, \
+                                       gene_l1_factor=hyperparameters['gene_l1_facotr'])  
         
         g_loss.backward()
         optimizer_G.step()
@@ -173,4 +171,4 @@ for epoch in range(num_epochs):
     # 모델 저장
     model_save_path = f"{save_dir}/generator_epoch_{epoch+1}.pth"
     save_model(generator, model_save_path)
-#####################################################################################################################################
+#========================================================================================================================

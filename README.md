@@ -17,6 +17,18 @@
 2. Discriminator
    해당 모델이 고해상도로 복원된 이미지인지 원본이미지인지 판단하는 작업을 진행함.
 
+### Compare FaultDetection
+
+#### 원본 이미지
+
+![My Image](images/OG_inf.png)
+
+#### 고해상도 이미지
+
+![My Image](images/HR_inf.png)
+
+저해상도에서 훈련시킨 이미지를 고해상도에서 복원하여 사용하였기 때문에 고해상도 이미지에서 훈련을 시켜볼 필요가 있음.
+
 ### TO DO LIST
 
 * [ ] organize the `train.py` code
