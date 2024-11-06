@@ -1,2 +1,4 @@
 /dataset/
 /log/
+/Results/
+*.pth
